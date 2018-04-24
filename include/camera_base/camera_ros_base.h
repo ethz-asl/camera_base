@@ -10,6 +10,8 @@
 #include <diagnostic_updater/publisher.h>
 #include <diagnostic_updater/diagnostic_updater.h>
 
+#include "camera_base/ImageNumbered.h"
+
 namespace camera_base {
 
 /**
@@ -50,6 +52,8 @@ class CameraRosBase {
             diagnostic_updater::TimeStampStatusParam(-0.01, 0.1)) {
     cnh_.param<std::string>("frame_id", frame_id_, cnh_.getNamespace());
     cnh_.param<std::string>("identifier", identifier_, "");
+    camera_numbered_pub_ = cnh_.advertise<camera_base::ImageNumbered>(
+        "image_raw_numbered", 10);
   }
 
   CameraRosBase() = delete;
@@ -90,6 +94,25 @@ class CameraRosBase {
     diagnostic_updater_.update();
   }
 
+  /**
+   * @brief PublishCamera Publish a camera topic with Image and CameraInfo
+   * @param time Acquisition time stamp
+   */
+  void PublishCameraNumbered(const ros::Time& time) {
+    const auto image_msg = boost::make_shared<sensor_msgs::Image>();
+    unsigned long image_number = 0;
+    image_msg->header.frame_id = frame_id_;
+    image_msg->header.stamp = time;
+    if (GrabNumbered(image_msg, image_number)) {
+      camera_base::ImageNumbered image_numbered;
+      image_numbered.image = *image_msg;
+      image_numbered.image_number = image_number;
+      camera_numbered_pub_.publish(image_numbered);
+      topic_diagnostic_.tick(image_msg->header.stamp);
+    }
+    diagnostic_updater_.update();
+  }
+
   void Publish(const sensor_msgs::ImagePtr& image_msg) {
     const auto cinfo_msg =
         boost::make_shared<sensor_msgs::CameraInfo>(cinfo_mgr_.getCameraInfo());
@@ -109,6 +132,15 @@ class CameraRosBase {
   virtual bool Grab(const sensor_msgs::ImagePtr& image_msg,
                     const sensor_msgs::CameraInfoPtr& cinfo_msgs = nullptr) = 0;
 
+  /**
+   * @brief Grab Fill image_msg and cinfo_msg from low level camera driver
+   * @param image_msg Ros message ImagePtr
+   * @return True if successful
+   */
+  virtual bool GrabNumbered(
+      const sensor_msgs::ImagePtr& image_msg,
+      unsigned long& image_number) = 0;
+
  private:
   ros::NodeHandle pnh_;
   ros::NodeHandle cnh_;
@@ -120,6 +152,7 @@ class CameraRosBase {
   diagnostic_updater::TopicDiagnostic topic_diagnostic_;
   std::string frame_id_;
   std::string identifier_;
+  ros::Publisher camera_numbered_pub_;
 };
 
 }  // namespace camera_base
